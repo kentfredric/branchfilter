@@ -194,7 +194,7 @@ sub _postprocess_commit {
   $block->{files} = [];
   exists $info->{branch} and $block->{header} = sprintf 'commit %s', $info->{branch};
   for my $change (@{$info->{changes}}) {
-    if (not $change->[0] eq 'deleteall' and not defined $change->{raw}) {
+    if (not $change->[0] eq 'deleteall' and not defined $change->[2]->{raw}) {
       if ($change->[0] eq 'M') {
         push @{$block->{files}}, sprintf 'M %s %s %s', $change->[2]->{mode}, $change->[2]->{ref}, $change->[1];
         next;
