@@ -262,6 +262,16 @@ sub _translate_oldmark {
   return $self->_translate_oldmark($translated);
 }
 
+sub _get_last_mark {
+  my ($self, $branch) = @_;
+  return $_[0]->{branches}->{$branch};
+}
+
+sub _update_branch {
+  my ($self, $branch, $mark) = @_;
+  $_[0]->{branches}->{$branch} = $mark;
+}
+
 sub _git_source {
   exists $_[0]->{_git_source} ? $_[0]->{_git_source} : $_[0]->{_git_source} =
     Git::Repository->new(work_tree => $_[0]->source_repo);
