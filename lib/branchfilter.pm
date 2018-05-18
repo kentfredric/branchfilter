@@ -105,7 +105,7 @@ sub _preprocess_commit {
   my ($self, $block, $info) = @_;
   $info->{changes} = [];
 
-  if ($block->{header} =~ m{\Acommit \x20 (.*)\z}) {
+  if ($block->{header} =~ m{\Acommit \x20 (.*)\z}x) {
     $info->{branch} = $1;
   }
 
