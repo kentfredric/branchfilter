@@ -155,6 +155,35 @@ sub _preprocess_commit {
   $info->{from}  = $self->_translate_oldmark($info->{from})  if exists $info->{from};
   $info->{merge} = $self->_translate_oldmark($info->{merge}) if exists $info->{merge};
 
+  {
+    my ($aname, $aemail, $dt, $tz,) = $block->{author}->[0] =~ qr{
+                  \A
+      author      \x20
+      ([^<]*?)    \x20
+      <([^>]*?)>  \x20
+      (\d+)       \x20
+      ([-+]\d+)   \z
+    }x;
+    $info->{author}->{name}   = $aname;
+    $info->{author}->{email}  = $aemail;
+    $info->{author}->{'time'} = $dt;
+    $info->{author}->{tz}     = $tz;
+  }
+  {
+    my ($cname, $cemail, $dt, $tz,) = $block->{committer}->[0] =~ qr{
+                  \A
+      committer   \x20
+      ([^<]*?)    \x20
+      <([^>]*?)>  \x20
+      (\d+)       \x20
+      ([-+]\d+)   \z
+    }x;
+    $info->{committer}->{name}   = $cname;
+    $info->{committer}->{email}  = $cemail;
+    $info->{committer}->{'time'} = $dt;
+    $info->{committer}->{tz}     = $tz;
+  }
+
   delete $info->{from}  if not defined $info->{from};
   delete $info->{merge} if not defined $info->{merge};
 
@@ -187,6 +216,16 @@ sub _postprocess_commit {
     if (exists $info->{mark}) {
       $self->_replace_oldmark($info->{mark}, $info->{from});
     }
+  }
+
+  if (exists $info->{author}) {
+    $block->{author} = [sprintf "author %s <%s> %s %s", $info->{author}->{name}, $info->{author}->{email},
+                        $info->{author}->{'time'},      $info->{author}->{tz}];
+  }
+  if (exists $info->{committer}) {
+    $block->{committer} = [sprintf "committer %s <%s> %s %s", $info->{committer}->{name},
+                           $info->{committer}->{email},       $info->{committer}->{'time'},
+                           $info->{committer}->{tz}];
   }
 
   unless ($info->{skip}) {
