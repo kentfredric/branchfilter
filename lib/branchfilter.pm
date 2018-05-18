@@ -144,21 +144,11 @@ sub _preprocess_commit {
   @{$block->{mark}  || []} and $block->{mark}->[0] =~ /\Amark \x20 (.*?)\z/   and $info->{mark}  = $1;
   @{$block->{merge} || []} and $block->{merge}->[0] =~ /\Amerge \x20 (.*?)\z/ and $info->{merge} = $1;
 
-  $info->{from} = $self->{replacements}->{$info->{from}}
-    while exists $info->{from}
-    and defined $info->{from}
-    and exists $self->{replacements}
-    and exists $self->{replacements}->{$info->{from}};
+  $info->{from}  = $self->_translate_oldmark($info->{from})  if exists $info->{from};
+  $info->{merge} = $self->_translate_oldmark($info->{merge}) if exists $info->{merge};
 
-  defined $info->{from} or delete $info->{from};
-
-  $info->{merge} = $self->{replacements}->{$info->{merge}}
-    while exists $info->{merge}
-    and defined $info->{merge}
-    and exists $self->{replacements}
-    and exists $self->{replacements}->{$info->{merge}};
-
-  defined $info->{merge} or delete $info->{merge};
+  delete $info->{from}  if not defined $info->{from};
+  delete $info->{merge} if not defined $info->{merge};
 
 }
 
@@ -186,12 +176,43 @@ sub _postprocess_commit {
   }
   if (not @{$block->{files}} and $self->prune_empty and not exists $info->{merge}) {
     $info->{skip} = 1;
-    exists $info->{mark} and $self->{replacements}->{$info->{mark}} = exists $info->{from} ? $info->{from} : undef;
+    if (exists $info->{mark}) {
+      $self->_replace_oldmark($info->{mark}, $info->{from});
+    }
   }
 
-  exists $info->{from}  and $block->{from}  = [sprintf 'from %s',  $info->{from}];
-  exists $info->{mark}  and $block->{mark}  = [sprintf 'mark %s',  $info->{mark}];
-  exists $info->{merge} and $block->{merge} = [sprintf 'merge %s', $info->{mark}];
+  unless ($info->{skip}) {
+    delete $block->{from}; exists $info->{from}
+      and $block->{from} = [sprintf 'from %s', $self->_get_newmark($info->{from})];
+    delete $block->{mark}; exists $info->{mark}
+      and $block->{mark} = [sprintf 'mark %s', $self->_get_newmark($info->{mark})];
+    delete $block->{merge}; exists $info->{merge}
+      and $block->{merge} = [sprintf 'merge %s', $self->_get_newmark($info->{mark})];
+  }
+}
+
+sub _get_newmark {
+  $_[0]->{mark_idx} = 0 unless exists $_[0]->{mark_idx};
+  return $_[0]->{replacements}->{new}->{$_[1]} if exists $_[0]->{replacements}->{new}->{$_[1]};
+  $_[0]->{mark_idx}++;
+  $_[0]->{replacements}->{new}->{$_[1]} = ":" . $_[0]->{mark_idx};
+  return ":" . $_[0]->{mark_idx};
+}
+
+sub _replace_oldmark {
+  my ($self, $orig_oldmark, $new_oldmark) = @_;
+  my $newmark = $self->_get_newmark($new_oldmark);
+  $_[0]->{replacements}->{old}->{$orig_oldmark} = $new_oldmark;
+}
+
+sub _translate_oldmark {
+  my ($self, $oldmark) = @_;
+  return $oldmark unless exists $_[0]->{replacements}->{old}->{$oldmark};
+  my $translated = $_[0]->{replacements}->{old}->{$oldmark};
+  return unless defined $translated;
+
+  # Chase graph of replacements if possible
+  return $self->_translate_oldmark($translated);
 }
 
 sub _git_source {
