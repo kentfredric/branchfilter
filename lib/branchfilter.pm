@@ -22,7 +22,7 @@ sub new {
 
   exists $args->{branches}    ? $self->_set_branches(delete $args->{branches})       : $self->_set_branches(['master']);
   exists $args->{handlers}    ? $self->_set_handlers(delete $args->{handlers})       : $self->_set_handlers({});
-  exists $args->{prune_emtpy} ? $self->_set_prune_empty(delete $args->{prune_empty}) : $self->_set_prune_empty(1);
+  exists $args->{prune_empty} ? $self->_set_prune_empty(delete $args->{prune_empty}) : $self->_set_prune_empty(1);
   exists $args->{source_repo} ? $self->_set_source_repo(delete $args->{source_repo}) : $self->_set_source_repo('.');
   exists $args->{write}       ? $self->_set_write(delete $args->{write})             : $self->_set_write(0);
   $self->_init_stats();
