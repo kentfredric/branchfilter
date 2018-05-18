@@ -44,6 +44,14 @@ sub next_block {
   return $object;
 }
 
+sub stats {
+  my (@out);
+  for my $key (qw( commit blob )) {
+    push @out, sprintf "%s: %8d => %8d", $key, $_[0]->{stats}->{in}->{$key}, $_[0]->{stats}->{out}->{$key};
+  }
+  return join q[, ], @out;
+}
+
 sub _set_source_repo {
   defined $_[1] or die "source_repo must be a defined value";
   length $_[1]  or die "source_repo must have a length";
