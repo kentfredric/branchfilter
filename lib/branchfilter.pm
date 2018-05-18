@@ -268,13 +268,15 @@ sub _git_source {
 }
 
 sub _git_export {
-  exists $_[0]->{_git_export} ? $_[0]->{_git_export} : $_[0]->{_git_export} =
+  exists $_[0]->{_git_export}
+    or $_[0]->{_git_export} =
     $_[0]->_git_source->command('fast-export', '--progress=1000', '--no-data', '--date-order', $_[0]->branches)->stdout;
+  $_[0]->{_git_export};
 }
 
 sub _git_fastexport {
-  exists $_[0]->{_git_fastexport} ? $_[0]->{_git_fastexport} : $_[0]->{_git_fast_export} =
-    Git::FastExport->new($_[0]->_git_export);
+  exists $_[0]->{_git_fastexport} or $_[0]->{_git_fastexport} = Git::FastExport->new($_[0]->_git_export);
+  $_[0]->{_git_fastexport};
 }
 
 sub _git_write_block {
@@ -288,7 +290,7 @@ sub _git_write_block {
 
 sub DESTROY {
   return unless ref $_[0];
-  close $_[0]->{write_fh} or warn "error closing git, $?";
+  exists $_[0]->{write_inited} and (close $_[0]->{write_fh} or warn "error closing git, $?");
 }
 
 1;
