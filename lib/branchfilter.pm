@@ -283,7 +283,7 @@ sub _git_write_block {
     $_[0]->{write_inited} = 1;
     open $_[0]->{write_fh}, '|-', 'git', '-C', $_[0]->dest_repo, 'fast-import' or die "Can't spawn fast-import, $@ $!";
   };
-  $_[0]->{write_fh}->print($_[1]);
+  $_[0]->{write_fh}->print($_[1]->as_string) or die "Could not write $_[1]->{type} to git-fast-import";
 }
 
 sub DESTROY {
