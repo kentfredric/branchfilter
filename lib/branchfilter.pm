@@ -27,6 +27,7 @@ sub new {
   exists $args->{write}       ? $self->_set_write(delete $args->{write})             : $self->_set_write(0);
   $self->_init_stats();
   $self->_init_state();
+  keys %{$args} and die "Unknown constructer argments [ @{[ keys %{$args} ]} ]";
   return $self;
 }
 
