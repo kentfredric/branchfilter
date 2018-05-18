@@ -37,6 +37,13 @@ sub prune_empty {$_[0]->{prune_empty}}
 sub source_repo {$_[0]->{source_repo}}
 sub write       {$_[0]->{write}}
 
+sub next_block {
+  my $object = $_[0]->_git_fastexport->next_block;
+  return if not defined $object;
+  $_[0]->_handle_block($object);
+  return $object;
+}
+
 sub _set_source_repo {
   defined $_[1] or die "source_repo must be a defined value";
   length $_[1]  or die "source_repo must have a length";
