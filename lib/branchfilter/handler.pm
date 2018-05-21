@@ -10,6 +10,8 @@ our $VERSION = '0.001000';
 
 # AUTHORITY
 
+use branchfilter::marks;
+
 our %BLOCK_TYPES = (map {$_ => 1} qw(commit tag reset blob checkpoint progress feature option done));
 
 sub new {
@@ -20,6 +22,8 @@ sub new {
   exists $args->{write}       ? $self->_set_write(delete $args->{write})             : $self->_set_write(0);
   $self->_init_stats();
   $self->_init_state();
+  $self->{marks} = branchfilter::marks->new();
+  exists $args->{namespace} ? $self->{namespace} = delete $args->{namespace} : $self->{namespace} = 'main';
   keys %{$args} and die "Unknown constructer argments [ @{[ keys %{$args} ]} ]";
   return $self;
 }
@@ -130,8 +134,8 @@ sub _preprocess_commit {
   @{$block->{mark}  || []} and $block->{mark}->[0] =~ /\Amark \x20 (.*?)\z/   and $info->{mark}  = $1;
   @{$block->{merge} || []} and $block->{merge}->[0] =~ /\Amerge \x20 (.*?)\z/ and $info->{merge} = $1;
 
-  $info->{from}  = $self->_translate_oldmark($info->{from})  if exists $info->{from};
-  $info->{merge} = $self->_translate_oldmark($info->{merge}) if exists $info->{merge};
+  $info->{from}  = $self->marks->get_translated_mark($self->{namespace}, $info->{from})  if exists $info->{from};
+  $info->{merge} = $self->marks->get_translated_mark($self->{namespace}, $info->{merge}) if exists $info->{merge};
 
   {
     my ($aname, $aemail, $dt, $tz,) = $block->{author}->[0] =~ qr{
@@ -191,9 +195,7 @@ sub _postprocess_commit {
   }
   if (not @{$block->{files}} and $self->prune_empty and not exists $info->{merge}) {
     $info->{skip} = 1;
-    if (exists $info->{mark}) {
-      $self->_replace_oldmark($info->{mark}, $info->{from});
-    }
+    $self->{marks}->set_mark_skip($self->{namespace}, $info->{mark}) if exists $info->{mark};
   }
 
   if (exists $info->{author}) {
@@ -208,46 +210,12 @@ sub _postprocess_commit {
 
   unless ($info->{skip}) {
     delete $block->{from}; exists $info->{from}
-      and $block->{from} = [sprintf 'from %s', $self->_get_newmark($info->{from})];
+      and $block->{from} = [sprintf 'from %s', $self->{marks}->get_newmark($self->{namespace}, $info->{from})];
     delete $block->{mark}; exists $info->{mark}
-      and $block->{mark} = [sprintf 'mark %s', $self->_get_newmark($info->{mark})];
+      and $block->{mark} = [sprintf 'mark %s', $self->{marks}->get_newmark($self->{namespace}, $info->{mark})];
     delete $block->{merge}; exists $info->{merge}
-      and $block->{merge} = [sprintf 'merge %s', $self->_get_newmark($info->{mark})];
+      and $block->{merge} = [sprintf 'merge %s', $self->{marks}->get_newmark($self->{namespace}, $info->{mark})];
   }
-}
-
-sub _get_newmark {
-  $_[0]->{mark_idx} = 0 unless exists $_[0]->{mark_idx};
-  return $_[0]->{replacements}->{new}->{$_[1]} if exists $_[0]->{replacements}->{new}->{$_[1]};
-  $_[0]->{mark_idx}++;
-  $_[0]->{replacements}->{new}->{$_[1]} = ":" . $_[0]->{mark_idx};
-  return ":" . $_[0]->{mark_idx};
-}
-
-sub _replace_oldmark {
-  my ($self, $orig_oldmark, $new_oldmark) = @_;
-  my $newmark = $self->_get_newmark($new_oldmark);
-  $_[0]->{replacements}->{old}->{$orig_oldmark} = $new_oldmark;
-}
-
-sub _translate_oldmark {
-  my ($self, $oldmark) = @_;
-  return $oldmark unless exists $_[0]->{replacements}->{old}->{$oldmark};
-  my $translated = $_[0]->{replacements}->{old}->{$oldmark};
-  return unless defined $translated;
-
-  # Chase graph of replacements if possible
-  return $self->_translate_oldmark($translated);
-}
-
-sub _get_last_mark {
-  my ($self, $branch) = @_;
-  return $_[0]->{branches}->{$branch};
-}
-
-sub _update_branch {
-  my ($self, $branch, $mark) = @_;
-  $_[0]->{branches}->{$branch} = $mark;
 }
 
 sub _git_write_block {
