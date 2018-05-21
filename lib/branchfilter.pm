@@ -10,7 +10,7 @@ use File::Spec;
 use Cwd qw( abs_path );
 use Git::Repository;
 use Git::FastExport;
-use Clone::PP qw( clone );
+use Clone qw( clone );
 
 # ABSTRACT: Filter branch(es) to generate derived braches
 
