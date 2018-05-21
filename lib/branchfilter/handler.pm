@@ -10,6 +10,8 @@ our $VERSION = '0.001000';
 
 # AUTHORITY
 
+our %BLOCK_TYPES = (map {$_ => 1} qw(commit tag reset blob checkpoint progress feature option done));
+
 sub new {
   my ($self, $args) = ((bless {}, $_[0]), ref $_[1] ? {%{$_[1]}} : {@_[1 .. $#_]});
   exists $args->{handlers}    ? $self->_set_handlers(delete $args->{handlers})       : $self->_set_handlers({});
