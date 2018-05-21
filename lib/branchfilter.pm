@@ -10,6 +10,7 @@ use File::Spec;
 use Cwd qw( abs_path );
 use Git::Repository;
 use Git::FastExport;
+use Clone::PP qw( clone );
 
 # ABSTRACT: Filter branch(es) to generate derived braches
 
@@ -21,35 +22,26 @@ sub new {
   my ($self, $args) = ((bless {}, $_[0]), ref $_[1] ? {%{$_[1]}} : {@_[1 .. $#_]});
 
   exists $args->{branches}    ? $self->_set_branches(delete $args->{branches})       : $self->_set_branches(['master']);
-  exists $args->{handlers}    ? $self->_set_handlers(delete $args->{handlers})       : $self->_set_handlers({});
-  exists $args->{prune_empty} ? $self->_set_prune_empty(delete $args->{prune_empty}) : $self->_set_prune_empty(1);
   exists $args->{source_repo} ? $self->_set_source_repo(delete $args->{source_repo}) : $self->_set_source_repo('.');
-  exists $args->{write}       ? $self->_set_write(delete $args->{write})             : $self->_set_write(0);
-  $self->_init_stats();
-  $self->_init_state();
+  grep {exists $args->{$_}} qw( handlers prune_empty write ) and $self->_add_handler({
+                             dest_repo => $self->dest_repo,
+                             map {exists $args->{$_} ? ($_ => delete $args->{$_}) : ()} qw( handlers prune_empty write )
+  });
   keys %{$args} and die "Unknown constructer argments [ @{[ keys %{$args} ]} ]";
   return $self;
 }
 
-sub branches {@{$_[0]->{branches} || []}}
+sub branches  {@{$_[0]->{branches}  || []}}
+sub _handlers {@{$_[0]->{_handlers} || []}}
+
 sub dest_repo   {$_[0]->{dest_repo}}
-sub prune_empty {$_[0]->{prune_empty}}
 sub source_repo {$_[0]->{source_repo}}
-sub write       {$_[0]->{write}}
 
 sub next_block {
   my $object = $_[0]->_git_fastexport->next_block;
   return if not defined $object;
-  $_[0]->_handle_block($object);
+  $_->_handle_block(clone($object)) for $_[0]->_handlers;
   return $object;
-}
-
-sub stats {
-  my (@out);
-  for my $key (qw( commit blob )) {
-    push @out, sprintf "%s: %8d => %8d", $key, $_[0]->{stats}->{in}->{$key}, $_[0]->{stats}->{out}->{$key};
-  }
-  return join q[, ], @out;
 }
 
 sub _set_source_repo {
@@ -66,8 +58,66 @@ sub _set_branches {
   'ARRAY' eq ref $_[1] or die "branches must be an ARRAY ref";
   $_[0]->{branches} = [@{$_[1]}];
 }
+
+sub _add_handler {
+  my ($self, $args) = (($_[0]), ref $_[1] ? {%{$_[1]}} : {@_[1 .. $#_]});
+  $args->{dest_repo} = $self->dest_repo unless exists $args->{dest_repo};
+  push @{$_[0]->{_handlers}}, branchfilter::handler->new($args);
+}
+
+sub _git_source {
+  exists $_[0]->{_git_source} ? $_[0]->{_git_source} : $_[0]->{_git_source} =
+    Git::Repository->new(work_tree => $_[0]->source_repo);
+}
+
+sub _git_export {
+  exists $_[0]->{_git_export}
+    or $_[0]->{_git_export} =
+    $_[0]->_git_source->command('fast-export', '--progress=1000', '--no-data', '--date-order', $_[0]->branches)->stdout;
+  $_[0]->{_git_export};
+}
+
+sub _git_fastexport {
+  exists $_[0]->{_git_fastexport} or $_[0]->{_git_fastexport} = Git::FastExport->new($_[0]->_git_export);
+  $_[0]->{_git_fastexport};
+}
+
+package branchfilter::handler;
+
+sub new {
+  my ($self, $args) = ((bless {}, $_[0]), ref $_[1] ? {%{$_[1]}} : {@_[1 .. $#_]});
+  exists $args->{handlers}    ? $self->_set_handlers(delete $args->{handlers})       : $self->_set_handlers({});
+  exists $args->{prune_empty} ? $self->_set_prune_empty(delete $args->{prune_empty}) : $self->_set_prune_empty(1);
+  exists $args->{dest_repo}   ? $self->_set_dest_repo(delete $args->{dest_repo})     : $self->_set_dest_repo('.');
+  exists $args->{write}       ? $self->_set_write(delete $args->{write})             : $self->_set_write(0);
+  $self->_init_stats();
+  $self->_init_state();
+  keys %{$args} and die "Unknown constructer argments [ @{[ keys %{$args} ]} ]";
+  return $self;
+}
+
+sub dest_repo   {$_[0]->{dest_repo}}
+sub handlers    {$_[0]->{handlers}}
+sub prune_empty {$_[0]->{prune_empty}}
+sub write       {$_[0]->{write}}
+
+sub stats {
+  my (@out);
+  for my $key (qw( commit blob )) {
+    push @out, sprintf "%s: %8d => %8d", $key, $_[0]->{stats}->{in}->{$key}, $_[0]->{stats}->{out}->{$key};
+  }
+  return join q[, ], @out;
+}
+
 sub _set_write       {$_[0]->{write}       = !!$_[1]}
 sub _set_prune_empty {$_[0]->{prune_empty} = !!$_[1]}
+
+sub _set_dest_repo {
+  defined $_[1] or die "dest_repo must be a defined value";
+  length $_[1]  or die "dest_repo must have a length";
+  -d $_[1]      or die "dest_repo must be a valid directory";
+  $_[0]->{dest_repo} = File::Spec->rel2abs($_[1]);
+}
 
 sub _set_handlers {
   defined $_[1]       or die "handlers must be a defined value";
@@ -270,23 +320,6 @@ sub _get_last_mark {
 sub _update_branch {
   my ($self, $branch, $mark) = @_;
   $_[0]->{branches}->{$branch} = $mark;
-}
-
-sub _git_source {
-  exists $_[0]->{_git_source} ? $_[0]->{_git_source} : $_[0]->{_git_source} =
-    Git::Repository->new(work_tree => $_[0]->source_repo);
-}
-
-sub _git_export {
-  exists $_[0]->{_git_export}
-    or $_[0]->{_git_export} =
-    $_[0]->_git_source->command('fast-export', '--progress=1000', '--no-data', '--date-order', $_[0]->branches)->stdout;
-  $_[0]->{_git_export};
-}
-
-sub _git_fastexport {
-  exists $_[0]->{_git_fastexport} or $_[0]->{_git_fastexport} = Git::FastExport->new($_[0]->_git_export);
-  $_[0]->{_git_fastexport};
 }
 
 sub _git_write_block {
