@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use Time::HiRes qw( gettimeofday tv_interval );
 use branchfilter;
 
 my @ebuilds = (qw(
@@ -151,9 +152,16 @@ my @ebuilds = (qw(
     sys-devel/libperl/libperl-5.8.8_rc1.ebuild
 ));
 
-my $bf      = branchfilter->new(source_repo => '/tmp/ghist-2015',);
+#splice @ebuilds, 4;
+
+my $bf      = branchfilter->new(source_repo => '/tmp/ghist-2015', branches => ['refs/remotes/origin/master'],);
 my $need_nl = 0;
 my $all_out = 0;
+
+my $start                 = [gettimeofday];
+my $last                  = $start;
+my $last_commit_count     = 0;
+my $last_commit_out_count = 0;
 
 for my $ebuild (@ebuilds) {
   my ($atom) = $ebuild;
@@ -200,7 +208,24 @@ for my $ebuild (@ebuilds) {
        $all_out += $_[0]->{stats}->{out}->{commit};
 
        if ($ebuild eq $ebuilds[-1]) {
-         *STDERR->printf("\e[31mcommits\e[0m in: %s out: %s\n", $_[0]->{stats}->{in}->{commit}, $all_out);
+         my $now = [gettimeofday];
+
+         my ($all_interval) = tv_interval($start, $now);
+         my ($last_interval) = tv_interval($last, $now); $last = [@{$now}];
+
+         my ($ci_ps)      = $_[0]->{stats}->{in}->{commit} / $all_interval;
+         my ($ci_this_ps) = ($_[0]->{stats}->{in}->{commit} - $last_commit_count) / $last_interval;
+
+         my ($co_ps)      = $all_out / $all_interval;
+         my ($co_this_ps) = ($all_out - $last_commit_out_count) / $last_interval;
+
+         $last_commit_count     = $_[0]->{stats}->{in}->{commit};
+         $last_commit_out_count = $all_out;
+
+         *STDERR->printf(
+             "\e[31mcommits\e[0m in: %10d (%8.3f / %8.3f) out: %10d (%8.3f / %8.3f) (elapsed: %8.3f, interval: %8.3f\n",
+             $_[0]->{stats}->{in}->{commit},
+             $ci_ps, $ci_this_ps, $all_out, $co_ps, $co_this_ps, $all_interval, $last_interval);
          $all_out = 0;
        }
 
