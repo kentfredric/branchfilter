@@ -1,0 +1,103 @@
+There's a bunch of tricks here which help with branch filtering for when it
+come to forget about the original repository.
+
+The branch filter technique this module employs relies on the git fast-export
+--no-data option, which relies on the exported steam being re-usable by
+a git fast-import which already has access to all the referenced SHA1s.
+
+However, Gits defaults here result in a lot of fluff that make purging
+no-longer-referenced objects slightly a pain in the ass.
+
+So, first, we create a "slave repository" which git will permit writes to,
+  while also allowing reads from the original repo.
+
+1. Create a repo
+
+  cd /tmp/demo
+  git init --bare
+
+2. Tell git to re-use objects where possible
+
+  echo "/tmp/original/.git/objects" > /tmp/demo/objects/info/alternates
+
+3. Tell git that the "original" repo is a remote
+
+  git remote add origin "/tmp/original"
+
+4. Employ this trick that emulates "git remote update", but without git
+spinning its wheels for 10 minutes on a very large repo:
+
+  #!perl
+  use strict;
+  use warnings;
+
+  open my $fh, '-|', 'git', 'ls-remote', '/tmp/original/' 
+    or die "can't spawn git ls-remote";
+  while( my $line = <$fh> ) {
+    chomp $line;
+    my ( $sha1, $ref ) = $line =~ m/\A(\S+)\s(.*\z)/;
+    next unless $ref =~ m{\Arefs/heads/};
+    my $newref = $ref;
+    $newref =~ s{\Arefs/heads/}{refs/remotes/origin/};
+    print "Creating $newref at $sha1\n";
+    system('git','update-ref',$newref, $sha1) == 0
+      or die "Can't git-update-ref, $!";
+  }
+
+  perl /tmp/remotes.pl 
+  Creating refs/remotes/origin/lastgood at c3d51c3109dade76a58584f245bd248db9465ffd
+  Creating refs/remotes/origin/master at 2ebda5cd08db6bdf193adaa6de33239a83a73af0
+
+
+After doing this, "git log origin/master" should work, and you can then use
+"refs/remotes/origin/master" as your "source" branch, and generate a horde of
+derived branches re-using the same blobs without incurring additional IO, and
+the only new IO writes that will occur will be the generation of new tree
+objects and new commit objects.
+
+After you're satisfied with your collection of derived branches, its time to
+decouple the repository.
+
+1. Remove the old origin 
+
+  git remote remove origin
+
+This will cleanup all old symbolic references to the /tmp/original repo,
+while still retaining the shared blobs via objects/info/alternates
+
+2. Repack your generated repository
+
+  git repack -A -d -f --window=1000 --unpack-unreachable=now
+
+This:
+  
+  1. Forcibly copies any needed blobs from /tmp/original to /tmp/demo
+  2. Forcibly regenerates any deltas ( and uses a wide delta window to
+      maximise object re-use in the new pack )
+  3. Forcibly prunes objects that are no longer referenced by any of your
+     newly generated branches.
+
+You might find this incredibly fast compared to what you'd get if you tried
+the same approach using classical "git clone", <filter branch>, "git gc",
+partly, because all the approaches used both by this documents process, and
+our export/import based branch filter, aggressively avoids leaving any
+reflogs, and aggressively avoids importing nodes into the destination without
+being already strictly necessary.
+
+This results in there being no residual references in the destination that
+"keep around" commits in the original source branches, and subsequently avoids
+git needing to even think about them, and also avoids git even needing to
+prune items from the *physical* destination repository (unless something else
+you did created orphans), which keeps IO low.
+
+3. Decouple the object sharing:
+
+  rm /tmp/demo/objects/info/alternates
+
+This is the final step which prevents git being capable of any object re-use.
+
+If you remove this file *without* running a repack, you'll end up with a
+corrupt repository. If this happens, simply resurrect that file as above,
+and your repository will be fixed.
+
+
