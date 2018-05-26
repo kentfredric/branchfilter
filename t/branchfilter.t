@@ -154,7 +154,7 @@ my @ebuilds = (qw(
 
 #splice @ebuilds, 4;
 
-my $bf      = branchfilter->new(source_repo => '/tmp/ghist-2015', branches => ['refs/remotes/origin/master'],);
+my $bf      = branchfilter->new(source_repo => '/tmp/ghist-2015', branches => ['refs/remotes/origin/master']);
 my $need_nl = 0;
 my $all_out = 0;
 
@@ -202,10 +202,16 @@ for my $ebuild (@ebuilds) {
            $change->[2]->{raw} =~ s{\Q${source_file}\E\z}{$dest_filename};
          }
        }
+       else {
+         $info->{skip} = 1;
+       }
      },
      progress => sub {
-       my $stats = $_[0]->stats;
-       $all_out += $_[0]->{stats}->{out}->{commit};
+
+       my $commits_encoded = $_[0]->encoder->stats->{commit};
+       my $commits_decoded = $bf->decoder->stats->{commit};
+
+       $all_out += $commits_encoded;
 
        if ($ebuild eq $ebuilds[-1]) {
          my $now = [gettimeofday];
@@ -213,13 +219,13 @@ for my $ebuild (@ebuilds) {
          my ($all_interval) = tv_interval($start, $now);
          my ($last_interval) = tv_interval($last, $now); $last = [@{$now}];
 
-         my ($ci_ps)      = $_[0]->{stats}->{in}->{commit} / $all_interval;
-         my ($ci_this_ps) = ($_[0]->{stats}->{in}->{commit} - $last_commit_count) / $last_interval;
+         my ($ci_ps)      = $commits_decoded / $all_interval;
+         my ($ci_this_ps) = ($commits_decoded - $last_commit_count) / $last_interval;
 
          my ($co_ps)      = $all_out / $all_interval;
          my ($co_this_ps) = ($all_out - $last_commit_out_count) / $last_interval;
 
-         $last_commit_count     = $_[0]->{stats}->{in}->{commit};
+         $last_commit_count     = $commits_decoded;
          $last_commit_out_count = $all_out;
 
          *STDERR->printf(
@@ -235,7 +241,8 @@ for my $ebuild (@ebuilds) {
      }
    }});
 }
-while ($bf->next_block) { }
+while ($bf->next_block) {
+}
 
 done_testing;
 
